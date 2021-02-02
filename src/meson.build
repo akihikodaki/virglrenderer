@@ -89,7 +89,6 @@ venus_sources = [
 virgl_depends = [
    gallium_dep,
    epoxy_dep,
-   libdrm_dep,
    thread_dep,
    m_dep,
 ]
@@ -106,7 +105,7 @@ virgl_sources += vrend_sources
 
 if have_egl
    virgl_sources += vrend_winsys_egl_sources
-   virgl_depends += [gbm_dep]
+   virgl_depends += [libdrm_dep, gbm_dep]
 endif
 
 if have_glx

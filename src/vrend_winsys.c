@@ -22,6 +22,7 @@
  *
  **************************************************************************/
 
+#include "vrend_debug.h"
 #include "vrend_winsys.h"
 
 #ifdef HAVE_EPOXY_GLX_H
@@ -29,6 +30,8 @@
 #endif
 
 #include <stddef.h>
+
+#include "os/os_misc.h"
 
 enum {
    CONTEXT_NONE,
@@ -113,7 +116,7 @@ void vrend_winsys_cleanup(void)
 #endif
 }
 
-virgl_renderer_gl_context vrend_winsys_create_context(struct virgl_gl_ctx_param *param)
+virgl_renderer_gl_context vrend_winsys_create_context(UNUSED struct virgl_gl_ctx_param *param)
 {
 #ifdef HAVE_EPOXY_EGL_H
    if (use_context == CONTEXT_EGL)
@@ -126,7 +129,7 @@ virgl_renderer_gl_context vrend_winsys_create_context(struct virgl_gl_ctx_param 
    return NULL;
 }
 
-void vrend_winsys_destroy_context(virgl_renderer_gl_context ctx)
+void vrend_winsys_destroy_context(UNUSED virgl_renderer_gl_context ctx)
 {
 #ifdef HAVE_EPOXY_EGL_H
    if (use_context == CONTEXT_EGL) {
@@ -142,7 +145,7 @@ void vrend_winsys_destroy_context(virgl_renderer_gl_context ctx)
 #endif
 }
 
-int vrend_winsys_make_context_current(virgl_renderer_gl_context ctx)
+int vrend_winsys_make_context_current(UNUSED virgl_renderer_gl_context ctx)
 {
 #ifdef HAVE_EPOXY_EGL_H
    if (use_context == CONTEXT_EGL)
