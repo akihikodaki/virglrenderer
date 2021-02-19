@@ -563,6 +563,8 @@ struct vrend_blit_info {
 void vrend_renderer_resource_get_info(struct pipe_resource *pres,
                                       struct vrend_renderer_resource_info *info);
 
+void vrend_renderer_borrow_texture_for_scanout(struct pipe_resource *pres);
+
 void vrend_renderer_get_cap_set(uint32_t cap_set, uint32_t *max_ver,
                                 uint32_t *max_size);
 

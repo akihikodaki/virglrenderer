@@ -13075,6 +13075,35 @@ void vrend_renderer_resource_get_info(struct pipe_resource *pres,
    info->stride = util_format_get_nblocksx(res->base.format, u_minify(res->base.width0, 0)) * elsize;
 }
 
+void vrend_renderer_borrow_texture_for_scanout(struct pipe_resource *pres)
+{
+   struct vrend_texture *tex = (struct vrend_texture *)pres;
+   struct vrend_format_table *tex_conv = &tex_conv_table[tex->base.base.format];
+
+   assert(tex->base.target == GL_TEXTURE_2D);
+   assert(!util_format_is_depth_or_stencil(tex->base.base.format));
+
+   glBindTexture(GL_TEXTURE_2D, tex->base.gl_id);
+
+   if (tex_conv->flags & VIRGL_TEXTURE_NEED_SWIZZLE) {
+      for (unsigned i = 0; i < ARRAY_SIZE(tex->cur_swizzle); ++i) {
+         GLint next_swizzle = to_gl_swizzle(tex_conv->swizzle[i]);
+         if (tex->cur_swizzle[i] != next_swizzle) {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R + i, next_swizzle);
+            tex->cur_swizzle[i] = next_swizzle;
+         }
+      }
+   }
+
+   if (tex->cur_srgb_decode != GL_DECODE_EXT && util_format_is_srgb(tex->base.base.format)) {
+      if (has_feature(feat_texture_srgb_decode)) {
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SRGB_DECODE_EXT,
+                         GL_DECODE_EXT);
+         tex->cur_srgb_decode = GL_DECODE_EXT;
+      }
+   }
+}
+
 int
 vrend_renderer_resource_d3d11_texture2d(struct pipe_resource *pres, void **d3d_tex2d)
 {

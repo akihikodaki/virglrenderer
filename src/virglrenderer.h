@@ -364,6 +364,9 @@ VIRGL_EXPORT int virgl_renderer_resource_get_info(int res_handle,
 VIRGL_EXPORT int virgl_renderer_resource_get_info_ext(int res_handle,
                                                       struct virgl_renderer_resource_info_ext *info);
 
+VIRGL_EXPORT int virgl_renderer_borrow_texture_for_scanout(int res_handle,
+                                                           struct virgl_renderer_resource_info_ext *info);
+
 VIRGL_EXPORT void virgl_renderer_cleanup(void *cookie);
 
 /* reset the rendererer - destroy all contexts and resource */
