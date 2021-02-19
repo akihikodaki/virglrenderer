@@ -31,12 +31,12 @@
    "// Blitter\n"                               \
 
 #define HEADER_GLES                             \
-   "#version 310 es\n"                          \
+   "#version 300 es\n"                          \
    "// Blitter\n"                               \
    "precision mediump float;\n"                 \
 
 #define HEADER_GLES_MS_ARRAY                             \
-   "#version 310 es\n"                          \
+   "#version 300 es\n"                          \
    "// Blitter\n"                               \
    "#extension GL_OES_texture_storage_multisample_2d_array: require\n" \
    "precision mediump float;\n"                 \
