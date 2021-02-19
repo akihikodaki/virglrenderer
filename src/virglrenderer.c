@@ -446,8 +446,8 @@ void virgl_renderer_ctx_detach_resource(int ctx_id, int res_handle)
    ctx->detach_resource(ctx, res);
 }
 
-int virgl_renderer_resource_get_info(int res_handle,
-                                     struct virgl_renderer_resource_info *info)
+int virgl_renderer_borrow_texture_for_scanout(int res_handle,
+                                              struct virgl_renderer_texture_info *info)
 {
    TRACE_FUNC();
    struct virgl_resource *res = virgl_resource_lookup(res_handle);
@@ -457,8 +457,8 @@ int virgl_renderer_resource_get_info(int res_handle,
    if (!info)
       return EINVAL;
 
-   vrend_renderer_resource_get_info(res->pipe_resource,
-                                    (struct vrend_renderer_resource_info *)info);
+   vrend_renderer_borrow_texture_for_scanout(res->pipe_resource,
+                                             (struct vrend_renderer_texture_info *)info);
    info->handle = res_handle;
 
    if (state.winsys_initialized) {

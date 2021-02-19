@@ -433,7 +433,7 @@ void vrend_renderer_detach_res_ctx(struct vrend_context *ctx,
 
 struct vrend_context_tweaks *vrend_get_context_tweaks(struct vrend_context *ctx);
 
-struct vrend_renderer_resource_info {
+struct vrend_renderer_texture_info {
    uint32_t handle;
    uint32_t format;
    uint32_t width;
@@ -444,8 +444,8 @@ struct vrend_renderer_resource_info {
    uint32_t stride;
 };
 
-void vrend_renderer_resource_get_info(struct pipe_resource *pres,
-                                      struct vrend_renderer_resource_info *info);
+void vrend_renderer_borrow_texture_for_scanout(struct pipe_resource *pres,
+                                               struct vrend_renderer_texture_info *info);
 
 void vrend_renderer_get_cap_set(uint32_t cap_set, uint32_t *max_ver,
                                 uint32_t *max_size);

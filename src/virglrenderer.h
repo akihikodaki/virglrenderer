@@ -240,9 +240,9 @@ VIRGL_EXPORT void virgl_renderer_ctx_detach_resource(int ctx_id, int res_handle)
 
 VIRGL_EXPORT virgl_debug_callback_type virgl_set_debug_callback(virgl_debug_callback_type cb);
 
-/* return information about a resource */
+/* borrow a texture for scanout */
 
-struct virgl_renderer_resource_info {
+struct virgl_renderer_texture_info {
    uint32_t handle;
    uint32_t virgl_format;
    uint32_t width;
@@ -254,8 +254,8 @@ struct virgl_renderer_resource_info {
    int drm_fourcc;
 };
 
-VIRGL_EXPORT int virgl_renderer_resource_get_info(int res_handle,
-                                                  struct virgl_renderer_resource_info *info);
+VIRGL_EXPORT int virgl_renderer_borrow_texture_for_scanout(int res_handle,
+                                                           struct virgl_renderer_texture_info *info);
 
 VIRGL_EXPORT void virgl_renderer_cleanup(void *cookie);
 

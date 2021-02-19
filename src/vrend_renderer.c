@@ -10748,21 +10748,45 @@ void vrend_context_set_debug_flags(struct vrend_context *ctx, const char *flagst
    }
 }
 
-void vrend_renderer_resource_get_info(struct pipe_resource *pres,
-                                      struct vrend_renderer_resource_info *info)
+void vrend_renderer_borrow_texture_for_scanout(struct pipe_resource *pres,
+                                               struct vrend_renderer_texture_info *info)
 {
-   struct vrend_resource *res = (struct vrend_resource *)pres;
+   struct vrend_texture *tex = (struct vrend_texture *)pres;
+   struct vrend_format_table *tex_conv = &tex_conv_table[tex->base.base.format];
    int elsize;
 
-   elsize = util_format_get_blocksize(res->base.format);
+   assert(tex->base.target == GL_TEXTURE_2D);
+   assert(!util_format_is_depth_or_stencil(tex->base.base.format));
 
-   info->tex_id = res->id;
-   info->width = res->base.width0;
-   info->height = res->base.height0;
-   info->depth = res->base.depth0;
-   info->format = res->base.format;
-   info->flags = res->y_0_top ? VIRGL_RESOURCE_Y_0_TOP : 0;
-   info->stride = util_format_get_nblocksx(res->base.format, u_minify(res->base.width0, 0)) * elsize;
+   elsize = util_format_get_blocksize(tex->base.base.format);
+
+   glBindTexture(GL_TEXTURE_2D, tex->base.id);
+
+   if (tex_conv->flags & VIRGL_TEXTURE_NEED_SWIZZLE) {
+      for (unsigned i = 0; i < ARRAY_SIZE(tex->cur_swizzle); ++i) {
+         GLint next_swizzle = to_gl_swizzle(tex_conv->swizzle[i]);
+         if (tex->cur_swizzle[i] != next_swizzle) {
+            glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R + i, next_swizzle);
+            tex->cur_swizzle[i] = next_swizzle;
+         }
+      }
+   }
+
+   if (tex->cur_srgb_decode != GL_DECODE_EXT && util_format_is_srgb(tex->base.base.format)) {
+      if (has_feature(feat_texture_srgb_decode)) {
+         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SRGB_DECODE_EXT,
+                         GL_DECODE_EXT);
+         tex->cur_srgb_decode = GL_DECODE_EXT;
+      }
+   }
+
+   info->tex_id = tex->base.id;
+   info->width = tex->base.base.width0;
+   info->height = tex->base.base.height0;
+   info->depth = tex->base.base.depth0;
+   info->format = tex->base.base.format;
+   info->flags = tex->base.y_0_top ? VIRGL_RESOURCE_Y_0_TOP : 0;
+   info->stride = util_format_get_nblocksx(tex->base.base.format, u_minify(tex->base.base.width0, 0)) * elsize;
 }
 
 void vrend_renderer_get_cap_set(uint32_t cap_set, uint32_t *max_ver,
