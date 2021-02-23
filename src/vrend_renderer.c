@@ -9498,7 +9498,11 @@ void vrend_get_query_result(struct vrend_context *ctx, uint32_t handle,
     if (buf) memcpy(buf, &value, size); \
     glUnmapBuffer(GL_QUERY_BUFFER);
 
-#define BUFFER_OFFSET(i) ((void *)((char *)NULL + i))
+static inline void *buffer_offset(intptr_t i)
+{
+   return (void *)i;
+}
+
 void vrend_get_query_result_qbo(struct vrend_context *ctx, uint32_t handle,
                                 uint32_t qbo_handle,
                                 uint32_t wait, uint32_t result_type, uint32_t offset,
@@ -9533,16 +9537,16 @@ void vrend_get_query_result_qbo(struct vrend_context *ctx, uint32_t handle,
      glBindBuffer(GL_QUERY_BUFFER, res->id);
      switch ((enum pipe_query_value_type)result_type) {
      case PIPE_QUERY_TYPE_I32:
-        glGetQueryObjectiv(q->id, qtype, BUFFER_OFFSET(offset));
+        glGetQueryObjectiv(q->id, qtype, buffer_offset(offset));
         break;
      case PIPE_QUERY_TYPE_U32:
-        glGetQueryObjectuiv(q->id, qtype, BUFFER_OFFSET(offset));
+        glGetQueryObjectuiv(q->id, qtype, buffer_offset(offset));
         break;
      case PIPE_QUERY_TYPE_I64:
-        glGetQueryObjecti64v(q->id, qtype, BUFFER_OFFSET(offset));
+        glGetQueryObjecti64v(q->id, qtype, buffer_offset(offset));
         break;
      case PIPE_QUERY_TYPE_U64:
-        glGetQueryObjectui64v(q->id, qtype, BUFFER_OFFSET(offset));
+        glGetQueryObjectui64v(q->id, qtype, buffer_offset(offset));
         break;
      }
   } else {
