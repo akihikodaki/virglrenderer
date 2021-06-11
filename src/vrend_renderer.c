@@ -352,7 +352,6 @@ struct global_renderer_state {
 
    /* Needed on GLES to inject a TCS */
    float tess_factors[6];
-   bool bgra_srgb_emulation_loaded;
 
    /* inferred GL caching type */
    uint32_t inferred_gl_caching_type;
@@ -845,6 +844,13 @@ bool vrend_format_is_emulated_alpha(enum virgl_formats format)
            format == VIRGL_FORMAT_A16_UNORM);
 }
 
+bool vrend_format_is_bgra(enum virgl_formats format) {
+   return (format == VIRGL_FORMAT_B8G8R8X8_UNORM ||
+           format == VIRGL_FORMAT_B8G8R8A8_UNORM ||
+           format == VIRGL_FORMAT_B8G8R8X8_SRGB  ||
+           format == VIRGL_FORMAT_B8G8R8A8_SRGB);
+}
+
 static bool vrend_blit_needs_swizzle(enum virgl_formats src,
                                      enum virgl_formats dst)
 {
@@ -1192,43 +1198,10 @@ vrend_insert_format_swizzle(int override_format, struct vrend_format_table *entr
       tex_conv_table[override_format].swizzle[i] = swizzle[i];
 }
 
-static inline enum virgl_formats
-vrend_format_replace_emulated(uint32_t bind, enum virgl_formats format)
-{
-   enum virgl_formats retval = format;
-
-   if (vrend_state.use_gles && (bind & VIRGL_BIND_PREFER_EMULATED_BGRA)) {
-      VREND_DEBUG(dbg_tweak, vrend_state.current_ctx, "Check tweak for format %s", util_format_name(format));
-      if (!vrend_state.bgra_srgb_emulation_loaded) {
-         GLint err = glGetError();
-         if (err != GL_NO_ERROR)
-            vrend_printf("Warning: stale error state when calling %s\n", __func__);
-         VREND_DEBUG_NOCTX(dbg_tweak, vrend_state.current_ctx, " ... add swizzled formats\n");
-         vrend_build_emulated_format_list_gles();
-         vrend_check_texture_storage(tex_conv_table);
-         vrend_state.bgra_srgb_emulation_loaded = true;
-      }
-      if (format == VIRGL_FORMAT_B8G8R8A8_UNORM)
-         retval = VIRGL_FORMAT_B8G8R8A8_UNORM_EMULATED;
-      else if (format == VIRGL_FORMAT_B8G8R8X8_UNORM)
-         retval = VIRGL_FORMAT_B8G8R8X8_UNORM_EMULATED;
-
-      VREND_DEBUG_NOCTX(dbg_tweak, vrend_state.current_ctx,
-                        "%s\n", (retval != format ? "... replace" : ""));
-   }
-   return retval;
-}
-
 const struct vrend_format_table *
 vrend_get_format_table_entry(enum virgl_formats format)
 {
    return &tex_conv_table[format];
-}
-
-const struct vrend_format_table *
-      vrend_get_format_table_entry_with_emulation(uint32_t bind, enum virgl_formats format)
-{
-   return vrend_get_format_table_entry(vrend_format_replace_emulated(bind, format));
 }
 
 static bool vrend_is_timer_query(GLenum gltype)
@@ -1877,7 +1850,6 @@ int vrend_create_surface(struct vrend_context *ctx,
 
    surf->res_handle = res_handle;
    surf->format = format;
-   format = vrend_format_replace_emulated(res->base.bind, format);
 
    surf->val0 = val0;
    surf->val1 = val1;
@@ -1897,10 +1869,9 @@ int vrend_create_surface(struct vrend_context *ctx,
       int first_layer = surf->val1 & 0xffff;
       int last_layer = (surf->val1 >> 16) & 0xffff;
 
-      VREND_DEBUG(dbg_tex, ctx, "Create texture view from %s for %s (emulated:%d)\n",
+      VREND_DEBUG(dbg_tex, ctx, "Create texture view from %s for %s\n",
                   util_format_name(res->base.format),
-                  util_format_name(surf->format),
-                  surf->format != format);
+                  util_format_name(surf->format));
 
       if ((first_layer != last_layer &&
            (first_layer != 0 || (last_layer != (int)util_max_layer(&res->base, surf->val0)))) ||
@@ -2532,21 +2503,6 @@ static void vrend_hw_emit_framebuffer_state(struct vrend_sub_context *sub_ctx)
          glDisable(GL_FRAMEBUFFER_SRGB_EXT);
       }
       sub_ctx->framebuffer_srgb_enabled = use_srgb;
-   }
-
-   if (vrend_state.use_gles &&
-       vrend_get_tweak_is_active(&sub_ctx->tweaks, virgl_tweak_gles_brga_apply_dest_swizzle)) {
-      sub_ctx->swizzle_output_rgb_to_bgr = 0;
-      for (int i = 0; i < sub_ctx->nr_cbufs; i++) {
-         if (sub_ctx->surf[i]) {
-            struct vrend_surface *surf = sub_ctx->surf[i];
-            if (surf->texture->base.bind & VIRGL_BIND_PREFER_EMULATED_BGRA) {
-               VREND_DEBUG(dbg_tweak, sub_ctx->parent, "Swizzled BGRA output for 0x%x (%s)\n", i, util_format_name(surf->format));
-               sub_ctx->swizzle_output_rgb_to_bgr |= 1 << i;
-            }
-         }
-      }
-
    }
 
    glDrawBuffers(sub_ctx->nr_cbufs, buffers);
@@ -3942,7 +3898,7 @@ void vrend_clear_texture(struct vrend_context* ctx,
       return;
    }
 
-   enum virgl_formats fmt = vrend_format_replace_emulated(res->base.bind, res->base.format);
+   enum virgl_formats fmt = res->base.format;
    format = tex_conv_table[fmt].glformat;
    type = tex_conv_table[fmt].gltype;
 
@@ -5762,30 +5718,6 @@ void vrend_bind_sampler_states(struct vrend_context *ctx,
    ctx->sub->sampler_views_dirty[shader_type] |= dirty;
 }
 
-static bool get_swizzled_border_color(enum virgl_formats fmt,
-                                      union pipe_color_union *in_border_color,
-                                      union pipe_color_union *out_border_color)
-{
-   const struct vrend_format_table *fmt_entry = vrend_get_format_table_entry(fmt);
-   if (vrend_state.use_gles &&
-       (fmt_entry->flags & VIRGL_TEXTURE_CAN_TEXTURE_STORAGE) &&
-       (fmt_entry->bindings & VIRGL_BIND_PREFER_EMULATED_BGRA)) {
-      for (int i = 0; i < 4; ++i) {
-         int swz = fmt_entry->swizzle[i];
-         switch (swz) {
-         case PIPE_SWIZZLE_ZERO: out_border_color->ui[i] = 0;
-            break;
-         case PIPE_SWIZZLE_ONE: out_border_color->ui[i] = 1;
-            break;
-         default:
-            out_border_color->ui[i] = in_border_color->ui[swz];
-         }
-      }
-      return true;
-   }
-   return false;
-}
-
 static void vrend_apply_sampler_state(struct vrend_sub_context *sub_ctx,
                                       struct vrend_resource *res,
                                       uint32_t shader_type,
@@ -5827,10 +5759,6 @@ static void vrend_apply_sampler_state(struct vrend_sub_context *sub_ctx,
          border_color.ui[0] = border_color.ui[3];
          border_color.ui[3] = 0;
          apply_sampler_border_color(sampler, border_color.ui);
-      } else {
-         union pipe_color_union border_color;
-         if (get_swizzled_border_color(tview->format, &state->border_color, &border_color))
-            apply_sampler_border_color(sampler, border_color.ui);
       }
 
       glBindSampler(sampler_id, sampler);
@@ -5894,11 +5822,7 @@ static void vrend_apply_sampler_state(struct vrend_sub_context *sub_ctx,
          border_color.ui[3] = 0;
          glTexParameterIuiv(target, GL_TEXTURE_BORDER_COLOR, border_color.ui);
       } else {
-         union pipe_color_union border_color;
-         if (get_swizzled_border_color(tview->format, &state->border_color, &border_color))
-            glTexParameterIuiv(target, GL_TEXTURE_BORDER_COLOR, border_color.ui);
-         else
-            glTexParameterIuiv(target, GL_TEXTURE_BORDER_COLOR, state->border_color.ui);
+         glTexParameterIuiv(target, GL_TEXTURE_BORDER_COLOR, state->border_color.ui);
       }
 
    }
@@ -6290,7 +6214,6 @@ int vrend_renderer_init(const struct vrend_if_cbs *cbs, uint32_t flags)
       glDisable(GL_DEBUG_OUTPUT);
    }
 
-   vrend_state.bgra_srgb_emulation_loaded = false;
    vrend_build_format_list_common();
 
    if (vrend_state.use_gles) {
@@ -6958,35 +6881,6 @@ static void vrend_resource_gbm_init(struct vrend_resource *gr, uint32_t format)
 #endif
 }
 
-static enum virgl_formats vrend_resource_fixup_emulated_bgra(struct vrend_resource *gr,
-                                                             bool imported)
-{
-   const struct pipe_resource *pr = &gr->base;
-   const enum virgl_formats format = pr->format;
-   const bool format_can_texture_storage = has_feature(feat_texture_storage) &&
-         (tex_conv_table[format].flags & VIRGL_TEXTURE_CAN_TEXTURE_STORAGE);
-
-   /* On GLES there is no support for glTexImage*DMultisample and
-    * BGRA surfaces are also unlikely to support glTexStorage2DMultisample
-    * so we try to emulate here
-    */
-   if (vrend_state.use_gles && pr->nr_samples > 0 && !format_can_texture_storage) {
-      VREND_DEBUG(dbg_tex, NULL, "Apply VIRGL_BIND_PREFER_EMULATED_BGRA because GLES+MS+noTS\n");
-      gr->base.bind |= VIRGL_BIND_PREFER_EMULATED_BGRA;
-   }
-
-   if (imported && !has_feature(feat_egl_image_storage))
-      gr->base.bind &= ~VIRGL_BIND_PREFER_EMULATED_BGRA;
-
-#ifdef ENABLE_MINIGBM_ALLOCATION
-   if (virgl_gbm_external_allocation_preferred(gr->base.bind) &&
-       !has_feature(feat_egl_image_storage))
-      gr->base.bind &= ~VIRGL_BIND_PREFER_EMULATED_BGRA;
-#endif
-
-   return vrend_format_replace_emulated(gr->base.bind, format);
-}
-
 static int vrend_resource_alloc_texture(struct vrend_resource *gr,
                                         enum virgl_formats format,
                                         void *image_oes)
@@ -7211,8 +7105,7 @@ vrend_renderer_resource_create(const struct vrend_renderer_resource_create_args 
    if (args->target == PIPE_BUFFER) {
       ret = vrend_resource_alloc_buffer(gr, args->flags);
    } else {
-      const enum virgl_formats format =
-         vrend_resource_fixup_emulated_bgra(gr, image_oes);
+      const enum virgl_formats format = gr->base.format;
       ret = vrend_resource_alloc_texture(gr, format, image_oes);
    }
 
@@ -7537,6 +7430,17 @@ static void get_current_texture(GLenum target, GLint* tex) {
    }
 }
 
+static void vrend_swizzle_data_bgra(uint64_t size, void *data) {
+   const size_t bpp = 4;
+   const size_t num_pixels = size / bpp;
+   for (size_t i = 0; i < num_pixels; ++i) {
+      unsigned char *pixel = ((unsigned char*)data) + i * bpp;
+      unsigned char first  = *pixel;
+      *pixel = *(pixel + 2);
+      *(pixel + 2) = first;
+   }
+}
+
 static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
                                              struct vrend_resource *res,
                                              const struct iovec *iov, int num_iovs,
@@ -7706,6 +7610,12 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
          x = info->box->x;
          y = invert ? (int)res->base.height0 - info->box->y - info->box->height : info->box->y;
 
+         /* GLES doesn't allow format conversions, which we need for BGRA resources with RGBA
+          * internal format. So we fallback to performing a CPU swizzle before uploading. */
+         if (vrend_state.use_gles && vrend_format_is_bgra(res->base.format)) {
+            VREND_DEBUG(dbg_bgra, ctx, "manually swizzling bgra->rgba on upload since gles+bgra\n");
+            vrend_swizzle_data_bgra(send_size, data);
+         }
 
          /* mipmaps are usually passed in one iov, and we need to keep the offset
           * into the data in case we want to read back the data of a surface
@@ -7960,17 +7870,7 @@ static int vrend_transfer_send_readpixels(struct vrend_context *ctx,
    else
       glUseProgram(0);
 
-   /* If the emubgra tweak is active then reading back the BGRA format emulated
-    * by swizzling a RGBA format will take a performance hit because mesa will
-    * manually swizzling the RGBA data. This can be avoided by setting the
-    * tweak bgraswz that does this swizzling already on the GPU when blitting
-    * or rendering to an emulated BGRA surface and reading back the data as
-    * RGBA. The check whether we are on gles and emugbra is active is done
-    * in vrend_format_replace_emulated, so no need to repeat the test here */
    enum virgl_formats fmt = res->base.format;
-   if (vrend_get_tweak_is_active(&ctx->sub->tweaks,
-                                 virgl_tweak_gles_brga_apply_dest_swizzle))
-      fmt = vrend_format_replace_emulated(res->base.bind, res->base.format);
 
    format = tex_conv_table[fmt].glformat;
    type = tex_conv_table[fmt].gltype;
@@ -8042,6 +7942,16 @@ static int vrend_transfer_send_readpixels(struct vrend_context *ctx,
 
    do_readpixels(res, 0, info->level, info->box->z, info->box->x, y1,
                  info->box->width, info->box->height, format, type, send_size, data);
+
+   /* on GLES, texture-backed BGR* resources are always stored with RGBA internal format, but
+    * the guest will expect to readback the data in BGRA format.
+    * Since the GLES API doesn't allow format conversions like GL, we CPU-swizzle the data
+    * on upload and need to do the same on readback.
+    */
+   if (vrend_state.use_gles && vrend_format_is_bgra(res->base.format)) {
+      VREND_DEBUG(dbg_bgra, ctx, "manually swizzling rgba->bgra on readback since gles+bgra\n");
+      vrend_swizzle_data_bgra(send_size, data);
+   }
 
    if (res->base.format == VIRGL_FORMAT_Z24X8_UNORM) {
       if (!vrend_state.use_core_profile)
@@ -8619,6 +8529,13 @@ static void vrend_resource_copy_fallback(struct vrend_resource *src_res,
          float depth_scale = 256.0;
          vrend_scale_depth(tptr, total_size, depth_scale);
       }
+
+      /* if this is a BGR* resource on GLES, the data needs to be manually swizzled to RGB* before
+       * storing in a texture. Iovec data is assumed to have the original byte-order, namely BGR*,
+       * and needs to be reordered when storing in the host's texture memory as RGB*.
+       */
+      if (vrend_format_is_bgra(dst_res->base.format))
+         vrend_swizzle_data_bgra(total_size, tptr);
    } else {
       uint32_t read_chunk_size;
       switch (elsize) {
@@ -8874,10 +8791,7 @@ static GLuint vrend_make_view(struct vrend_resource *res, enum virgl_formats for
 {
    GLuint view_id;
    glGenTextures(1, &view_id);
-#ifndef NDEBUG
-   enum virgl_formats src_fmt = vrend_format_replace_emulated(res->base.bind, res->base.format);
-#endif
-   enum virgl_formats dst_fmt = vrend_format_replace_emulated(res->base.bind, format);
+   enum virgl_formats dst_fmt = format;
 
    GLenum fmt = tex_conv_table[dst_fmt].internalformat;
 
@@ -8885,11 +8799,9 @@ static GLuint vrend_make_view(struct vrend_resource *res, enum virgl_formats for
    if (!has_bit(res->storage_bits, VREND_STORAGE_GL_IMMUTABLE))
       return res->id;
 
-   VREND_DEBUG(dbg_blit, NULL, "Create texture view from %s%s as %s%s\n",
+   VREND_DEBUG(dbg_blit, NULL, "Create texture view from %s as %s\n",
                util_format_name(res->base.format),
-               res->base.format != src_fmt ? "(emulated)" : "",
-               util_format_name(format),
-               format != dst_fmt ? "(emulated)" : "");
+               util_format_name(format));
 
    if (vrend_state.use_gles) {
       assert(res->target != GL_TEXTURE_RECTANGLE_NV);
@@ -8996,16 +8908,8 @@ static void vrend_renderer_blit_int(struct vrend_context *ctx,
    if (info->src.box.depth != info->dst.box.depth)
       use_gl = true;
 
-   if (vrend_blit_needs_swizzle(vrend_format_replace_emulated(dst_res->base.bind, info->dst.format),
-                                vrend_format_replace_emulated(src_res->base.bind, info->src.format))) {
+   if (vrend_blit_needs_swizzle(info->dst.format, info->src.format))
       use_gl = true;
-
-      if (vrend_state.use_gles &&
-          (dst_res->base.bind & VIRGL_BIND_PREFER_EMULATED_BGRA) &&
-          !vrend_get_tweak_is_active(&ctx->sub->tweaks, virgl_tweak_gles_brga_apply_dest_swizzle)) {
-         skip_dest_swizzle = true;
-      }
-   }
 
    if (has_feature(feat_texture_view))
       blitter_views[0] = vrend_make_view(src_res, info->src.format);
@@ -10433,7 +10337,6 @@ static void vrend_renderer_fill_caps_v2(int gl_ver, int gles_ver,  union virgl_c
    /* We want to expose ARB_gpu_shader_fp64 when running on top of ES */
    if (vrend_state.use_gles) {
       caps->v2.capability_bits |= VIRGL_CAP_FAKE_FP64;
-      caps->v2.capability_bits |= VIRGL_CAP_BGRA_SRGB_IS_EMULATED;
    }
 
    if (has_feature(feat_indirect_draw))
@@ -11051,7 +10954,6 @@ vrend_renderer_pipe_resource_set_type(struct vrend_context *ctx,
       if (!gr)
          return ENOMEM;
 
-      virgl_format = vrend_resource_fixup_emulated_bgra(gr, true);
       drm_format = 0;
       if (virgl_gbm_convert_format(&virgl_format, &drm_format)) {
          vrend_printf("%s: unsupported format %d\n", __func__, virgl_format);

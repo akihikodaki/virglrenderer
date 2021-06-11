@@ -136,7 +136,6 @@ bool vrend_check_framebuffer_mixed_color_attachements(void);
 void vrend_insert_format_swizzle(int override_format, struct vrend_format_table *entry,
                                  uint32_t bindings, uint8_t swizzle[4], uint32_t flags);
 const struct vrend_format_table *vrend_get_format_table_entry(enum virgl_formats format);
-const struct vrend_format_table *vrend_get_format_table_entry_with_emulation(uint32_t bind, enum virgl_formats format);
 
 int vrend_create_shader(struct vrend_context *ctx,
                         uint32_t handle,
@@ -468,6 +467,7 @@ void vrend_fb_bind_texture(struct vrend_resource *res,
                            int idx,
                            uint32_t level, uint32_t layer);
 bool vrend_format_is_emulated_alpha(enum virgl_formats format);
+bool vrend_format_is_bgra(enum virgl_formats format);
 
 #define VREND_COPY_COMPAT_FLAG_ALLOW_COMPRESSED (1u << 0)
 #define VREND_COPY_COMPAT_FLAG_ONE_IS_EGL_IMAGE (1u << 1)

@@ -328,18 +328,13 @@ static struct vrend_format_table gl_bgra_formats[] = {
   { VIRGL_FORMAT_B8G8R8A8_UNORM, GL_RGBA8, GL_BGRA, GL_UNSIGNED_BYTE, NO_SWIZZLE },
 };
 
-
 static struct vrend_format_table gles_bgra_formats[] = {
-  { VIRGL_FORMAT_B8G8R8X8_UNORM, GL_BGRA_EXT, GL_BGRA_EXT, GL_UNSIGNED_BYTE, RGB1_SWIZZLE },
-  { VIRGL_FORMAT_B8G8R8A8_UNORM, GL_BGRA_EXT, GL_BGRA_EXT, GL_UNSIGNED_BYTE, NO_SWIZZLE },
+  { VIRGL_FORMAT_B8G8R8X8_UNORM, GL_RGBA8,        GL_RGBA,     GL_UNSIGNED_BYTE, RGB1_SWIZZLE },
+  { VIRGL_FORMAT_B8G8R8A8_UNORM, GL_RGBA8,        GL_RGBA,     GL_UNSIGNED_BYTE, NO_SWIZZLE },
+  { VIRGL_FORMAT_B8G8R8X8_SRGB,  GL_SRGB8_ALPHA8, GL_RGBA,     GL_UNSIGNED_BYTE, RGB1_SWIZZLE },
+  { VIRGL_FORMAT_B8G8R8A8_SRGB,  GL_SRGB8_ALPHA8, GL_RGBA,     GL_UNSIGNED_BYTE, NO_SWIZZLE },
 };
 
-static struct vrend_format_table gles_bgra_formats_emulation[] = {
-  { VIRGL_FORMAT_B8G8R8X8_UNORM_EMULATED, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, BGR1_SWIZZLE },
-  { VIRGL_FORMAT_B8G8R8A8_UNORM_EMULATED, GL_RGBA8, GL_RGBA, GL_UNSIGNED_BYTE, BGRA_SWIZZLE },
-  { VIRGL_FORMAT_B8G8R8X8_SRGB,  GL_SRGB8_ALPHA8, GL_RGBA, GL_UNSIGNED_BYTE, BGR1_SWIZZLE },
-  { VIRGL_FORMAT_B8G8R8A8_SRGB,  GL_SRGB8_ALPHA8, GL_RGBA, GL_UNSIGNED_BYTE, BGRA_SWIZZLE },
-};
 
 
 static struct vrend_format_table gles_z32_format[] = {
@@ -537,14 +532,6 @@ static void vrend_add_formats(struct vrend_format_table *table, int num_entries)
           flags |= VIRGL_TEXTURE_CAN_READBACK;
     }
 
-    if (i == VIRGL_FORMAT_B8G8R8A8_UNORM_EMULATED) {
-       table[VIRGL_FORMAT_B8G8R8A8_UNORM].flags |= VIRGL_TEXTURE_CAN_READBACK;
-       binding |= VIRGL_BIND_PREFER_EMULATED_BGRA;
-    } else if (i == VIRGL_FORMAT_B8G8R8X8_UNORM_EMULATED) {
-       table[VIRGL_FORMAT_B8G8R8X8_UNORM].flags |= VIRGL_TEXTURE_CAN_READBACK;
-       binding |= VIRGL_BIND_PREFER_EMULATED_BGRA;
-    }
-
     glDeleteTextures(1, &tex_id);
     glDeleteFramebuffers(1, &fb_id);
 
@@ -615,9 +602,11 @@ void vrend_build_format_list_gl(void)
 void vrend_build_format_list_gles(void)
 {
   /* The BGR[A|X] formats is required but OpenGL ES does not
-   * support rendering to it. Try to use GL_BGRA_EXT from the
-   * GL_EXT_texture_format_BGRA8888 extension. But the
-   * GL_BGRA_EXT format is not supported by OpenGL Desktop.
+   * support it as nicely as OpenGL. We could try to use BGRA_EXT from
+   * EXT_texture_format_BGRA8888, but it becomes error prone when mixed
+   * with BGR*_SRGB formats and framebuffer multisampling. Instead, on
+   * GLES hosts, we always emulate BGR* as GL_RGB* with a swizzle on
+   * transfers to/from the host.
    */
   add_formats(gles_bgra_formats);
 
@@ -627,11 +616,6 @@ void vrend_build_format_list_gles(void)
    */
   add_formats(gles_z32_format);
   add_formats(gles_bit10_formats);
-}
-
-void vrend_build_emulated_format_list_gles(void)
-{
-  add_formats(gles_bgra_formats_emulation);
 }
 
 /* glTexStorage may not support all that is supported by glTexImage,
@@ -882,8 +866,7 @@ boolean format_is_copy_compatible(enum virgl_formats src, enum virgl_formats dst
        * So the formats do not match when Mesa checks them internally.
        */
       if (flags & VREND_COPY_COMPAT_FLAG_ONE_IS_EGL_IMAGE &&
-          (src == VIRGL_FORMAT_B8G8R8X8_UNORM ||
-           src == VIRGL_FORMAT_B8G8R8X8_UNORM_EMULATED))
+          src == VIRGL_FORMAT_B8G8R8X8_UNORM)
          return false;
       return true;
    }

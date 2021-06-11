@@ -642,7 +642,7 @@ static void vrend_set_tex_param(struct vrend_resource *src_res,
                                 bool has_texture_srgb_decode)
 {
    const struct vrend_format_table *src_entry =
-      vrend_get_format_table_entry_with_emulation(src_res->base.bind, info->src.format);
+      vrend_get_format_table_entry(info->src.format);
 
    if (src_entry->flags & VIRGL_TEXTURE_NEED_SWIZZLE) {
       glTexParameteri(src_res->target, GL_TEXTURE_SWIZZLE_R,
@@ -715,7 +715,7 @@ void vrend_renderer_blit_gl(MAYBE_UNUSED struct vrend_context *ctx,
       util_format_description(dst_res->base.format);
    const struct vrend_format_table *orig_src_entry = vrend_get_format_table_entry(info->src.format);
    const struct vrend_format_table *dst_entry =
-      vrend_get_format_table_entry_with_emulation(dst_res->base.bind, info->dst.format);
+      vrend_get_format_table_entry(info->dst.format);
 
    has_depth = util_format_has_depth(src_desc) &&
       util_format_has_depth(dst_desc);
