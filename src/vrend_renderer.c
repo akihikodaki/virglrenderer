@@ -8884,31 +8884,30 @@ static void vrend_renderer_blit_int(struct vrend_context *ctx,
       src_y2 = src_res->base.height0 - info->src.box.y;
    }
 
+   if (use_gl) {;}
    /* GLES generally doesn't support blitting to a multi-sample FB, and also not
     * from a multi-sample FB where the regions are not exatly the same or the
     * source and target format are different. For
     * downsampling DS blits to zero samples we solve this by doing two blits */
-   if (vrend_state.use_gles &&
-       ((dst_res->base.nr_samples > 0) ||
-        ((info->mask & PIPE_MASK_RGBA) &&
-         (src_res->base.nr_samples > 0) &&
-         (info->src.box.x != info->dst.box.x ||
-          info->src.box.width != info->dst.box.width ||
-          dst_y1 != src_y1 || dst_y2 != src_y2 ||
-          info->src.format != info->dst.format))
-        )
-       ) {
+   else if (vrend_state.use_gles &&
+            ((dst_res->base.nr_samples > 0) ||
+             ((info->mask & PIPE_MASK_RGBA) &&
+              (src_res->base.nr_samples > 0) &&
+              (info->src.box.x != info->dst.box.x ||
+               info->src.box.width != info->dst.box.width ||
+               dst_y1 != src_y1 || dst_y2 != src_y2 ||
+               info->src.format != info->dst.format))
+            )
+           ) {
       VREND_DEBUG(dbg_blit, ctx, "Use GL fallback because dst:ms:%d src:ms:%d (%d %d %d %d) -> (%d %d %d %d)\n",
                   dst_res->base.nr_samples, src_res->base.nr_samples, info->src.box.x, info->src.box.x + info->src.box.width,
                   src_y1, src_y2, info->dst.box.x, info->dst.box.x + info->dst.box.width, dst_y1, dst_y2);
       use_gl = true;
    }
-
    /* for 3D mipmapped blits - hand roll time */
-   if (info->src.box.depth != info->dst.box.depth)
+   else if (info->src.box.depth != info->dst.box.depth)
       use_gl = true;
-
-   if (vrend_blit_needs_swizzle(info->dst.format, info->src.format))
+   else if (vrend_blit_needs_swizzle(info->dst.format, info->src.format))
       use_gl = true;
 
    if (has_feature(feat_texture_view))
