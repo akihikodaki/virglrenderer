@@ -127,6 +127,7 @@ static const struct debug_named_value vrend_debug_options[] = {
    {"tweak", dbg_tweak, "Log tweaks"},
    {"query", dbg_query, "Log queries"},
    {"gles", dbg_gles, "GLES host specific debug"},
+   {"bgra", dbg_bgra, "Debug specific to BGRA emulation on GLES hosts"},
    {"all", dbg_all, "Enable all debugging output"},
    {"guestallow", dbg_allow_guest_override, "Allow the guest to override the debug flags"},
    {"khr", dbg_khr, "Enable debug via KHR_debug extension"},
