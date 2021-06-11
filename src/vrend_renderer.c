@@ -1869,15 +1869,15 @@ int vrend_create_surface(struct vrend_context *ctx,
       int first_layer = surf->val1 & 0xffff;
       int last_layer = (surf->val1 >> 16) & 0xffff;
 
-      VREND_DEBUG(dbg_tex, ctx, "Create texture view from %s for %s\n",
-                  util_format_name(res->base.format),
-                  util_format_name(surf->format));
-
       if ((first_layer != last_layer &&
            (first_layer != 0 || (last_layer != (int)util_max_layer(&res->base, surf->val0)))) ||
           surf->format != res->base.format) {
          GLenum target = res->target;
          GLenum internalformat = tex_conv_table[format].internalformat;
+
+         VREND_DEBUG(dbg_tex, ctx, "Create texture view from %s for %s\n",
+                     util_format_name(res->base.format),
+                     util_format_name(surf->format));
 
          glGenTextures(1, &surf->id);
          if (vrend_state.use_gles) {
