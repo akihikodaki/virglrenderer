@@ -8790,10 +8790,12 @@ void vrend_renderer_resource_copy_region(struct vrend_context *ctx,
 static GLuint vrend_make_view(struct vrend_resource *res, enum virgl_formats format)
 {
    GLuint view_id;
-   glGenTextures(1, &view_id);
-   enum virgl_formats dst_fmt = format;
 
-   GLenum fmt = tex_conv_table[dst_fmt].internalformat;
+   GLenum tex_ifmt = tex_conv_table[res->base.format].internalformat;
+   GLenum view_ifmt = tex_conv_table[format].internalformat;
+
+   if (tex_ifmt == view_ifmt)
+      return res->id;
 
    /* If the format doesn't support TextureStorage it is not immutable, so no TextureView*/
    if (!has_bit(res->storage_bits, VREND_STORAGE_GL_IMMUTABLE))
@@ -8809,7 +8811,8 @@ static GLuint vrend_make_view(struct vrend_resource *res, enum virgl_formats for
       assert(res->target != GL_TEXTURE_1D_ARRAY);
    }
 
-   glTextureView(view_id, res->target, res->id, fmt, 0, res->base.last_level + 1,
+   glGenTextures(1, &view_id);
+   glTextureView(view_id, res->target, res->id, view_ifmt, 0, res->base.last_level + 1,
                  0, res->base.array_size);
    return view_id;
 }
