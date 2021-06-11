@@ -8910,7 +8910,7 @@ static void vrend_renderer_blit_int(struct vrend_context *ctx,
    else if (vrend_blit_needs_swizzle(info->dst.format, info->src.format))
       use_gl = true;
 
-   if (has_feature(feat_texture_view))
+   if ((src_res->base.format != info->src.format) && has_feature(feat_texture_view))
       blitter_views[0] = vrend_make_view(src_res, info->src.format);
 
    if ((dst_res->base.format != info->dst.format) && has_feature(feat_texture_view))
