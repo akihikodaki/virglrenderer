@@ -8877,8 +8877,8 @@ static void vrend_renderer_blit_int(struct vrend_context *ctx,
    GLenum filter;
    int n_layers = 1, i;
    bool use_gl = false;
+   bool needs_swizzle = false;
    bool make_intermediate_copy = false;
-   bool skip_dest_swizzle = false;
    GLuint intermediate_fbo = 0;
    struct vrend_resource *intermediate_copy = 0;
 
@@ -8960,8 +8960,10 @@ static void vrend_renderer_blit_int(struct vrend_context *ctx,
    /* for 3D mipmapped blits - hand roll time */
    else if (info->src.box.depth != info->dst.box.depth)
       use_gl = true;
-   else if (vrend_blit_needs_swizzle(info->dst.format, info->src.format))
+   else if (vrend_blit_needs_swizzle(info->dst.format, info->src.format)) {
       use_gl = true;
+      needs_swizzle = true;
+   }
 
    if ((src_res->base.format != info->src.format) && has_feature(feat_texture_view))
       blitter_views[0] = vrend_make_view(src_res, info->src.format);
@@ -8969,13 +8971,44 @@ static void vrend_renderer_blit_int(struct vrend_context *ctx,
    if ((dst_res->base.format != info->dst.format) && has_feature(feat_texture_view))
       blitter_views[1] = vrend_make_view(dst_res, info->dst.format);
 
+   /* Virgl's BGR* formats always use GL_RGBA8 internal format so texture views have no format
+    * conversion effects. Swizzling during blits is required instead.
+    * Also, GBM/EGL-backed (i.e. external) BGR* resources are always stored with BGR* internal
+    * format, despite Virgl's use of the GL_RGBA8 internal format, so special care must be taken
+    * when determining the swizzling.
+    */
+   bool needs_redblue_swizzle = false;
+   if (vrend_resource_is_emulated_bgra(src_res) ^ vrend_resource_is_emulated_bgra(dst_res))
+      needs_redblue_swizzle = !needs_redblue_swizzle;
+
+   /* Virgl blits support "views" on source/dest resources, allowing another level of format
+    * conversion on top of the host's GL API. These views need to be reconciled manually when
+    * any BGR* resources are involved, since they are internally stored with RGB* byte-ordering,
+    * and externally stored with BGR* byte-ordering.
+    */
+   if (vrend_format_is_bgra(src_res->base.format) ^ vrend_format_is_bgra(info->src.format))
+      needs_redblue_swizzle = !needs_redblue_swizzle;
+   if (vrend_format_is_bgra(dst_res->base.format) ^ vrend_format_is_bgra(info->dst.format))
+      needs_redblue_swizzle = !needs_redblue_swizzle;
+
+   uint8_t blit_swizzle[4] = {0, 1, 2, 3};
+   if (needs_swizzle && vrend_get_format_table_entry(dst_res->base.format)->flags & VIRGL_TEXTURE_NEED_SWIZZLE)
+      memcpy(blit_swizzle, tex_conv_table[dst_res->base.format].swizzle, sizeof(blit_swizzle));
+
+   if (needs_redblue_swizzle) {
+      VREND_DEBUG(dbg_blit, ctx, "Applying red/blue swizzle during blit involving an external BGR* resource\n");
+      use_gl = true;
+      uint8_t temp = blit_swizzle[0];
+      blit_swizzle[0] = blit_swizzle[2];
+      blit_swizzle[2] = temp;
+   }
 
    if (use_gl) {
       VREND_DEBUG(dbg_blit, ctx, "BLIT_INT: use GL fallback\n");
       vrend_renderer_blit_gl(ctx, src_res, dst_res, blitter_views, info,
                              has_feature(feat_texture_srgb_decode),
                              has_feature(feat_srgb_write_control),
-                             skip_dest_swizzle);
+                             blit_swizzle);
       vrend_sync_make_current(ctx->sub->gl_context);
       goto cleanup;
    }
@@ -9176,19 +9209,23 @@ void vrend_renderer_blit(struct vrend_context *ctx,
       vrend_pause_render_condition(ctx, true);
 
    VREND_DEBUG(dbg_blit, ctx, "BLIT: rc:%d scissor:%d filter:%d alpha:%d mask:0x%x\n"
-                                   "  From %s(%s) ms:%d [%d, %d, %d]+[%d, %d, %d] lvl:%d\n"
-                                   "  To   %s(%s) ms:%d [%d, %d, %d]+[%d, %d, %d] lvl:%d\n",
+                                   "  From %s(%s) ms:%d egl:%d gbm:%d [%d, %d, %d]+[%d, %d, %d] lvl:%d\n"
+                                   "  To   %s(%s) ms:%d egl:%d gbm:%d [%d, %d, %d]+[%d, %d, %d] lvl:%d\n",
                                    info->render_condition_enable, info->scissor_enable,
                                    info->filter, info->alpha_blend, info->mask,
                                    util_format_name(src_res->base.format),
                                    util_format_name(info->src.format),
                                    src_res->base.nr_samples,
+                                   !!src_res->egl_image,
+                                   !!(src_res->buffer_storage_flags & VREND_STORAGE_GBM_BUFFER),
                                    info->src.box.x, info->src.box.y, info->src.box.z,
                                    info->src.box.width, info->src.box.height, info->src.box.depth,
                                    info->src.level,
                                    util_format_name(dst_res->base.format),
                                    util_format_name(info->dst.format),
                                    dst_res->base.nr_samples,
+                                   !!dst_res->egl_image,
+                                   !!(dst_res->buffer_storage_flags & VREND_STORAGE_GBM_BUFFER),
                                    info->dst.box.x, info->dst.box.y, info->dst.box.z,
                                    info->dst.box.width, info->dst.box.height, info->dst.box.depth,
                                    info->dst.level);

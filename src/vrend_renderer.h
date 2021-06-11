@@ -482,7 +482,7 @@ void vrend_renderer_blit_gl(struct vrend_context *ctx,
                             const struct pipe_blit_info *info,
                             bool has_texture_srgb_decode,
                             bool has_srgb_write_control,
-                            bool skip_dest_swizzle);
+                            uint8_t swizzle[static 4]);
 void vrend_blitter_fini(void);
 
 void vrend_renderer_prepare_reset(void);
