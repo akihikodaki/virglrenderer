@@ -851,6 +851,24 @@ bool vrend_format_is_bgra(enum virgl_formats format) {
            format == VIRGL_FORMAT_B8G8R8A8_SRGB);
 }
 
+static bool vrend_resource_is_emulated_bgra(struct vrend_resource *res)
+{
+   /* On all hosts, BGR* resources are swizzled on upload and stored with RGB*
+    * internal format. On GLES hosts, we must perform that swizzle ourselves.
+    * However, for externally-stored resources such as EGL images and
+    * GBM-allocated dma-bufs, the pixel data is expected to be stored with BGR*
+    * byte-ordering. Emulation is added during texture sampling, blitting, and
+    * rendering to correct the red/blue color inversion caused by the mismatch
+    * between storage expectation and the RGB* internal format given to the host
+    * GL[ES] API.
+    */
+   if (vrend_format_is_bgra(res->base.format) &&
+       (has_bit(res->storage_bits, VREND_STORAGE_EGL_IMAGE) || res->egl_image ||
+        has_bit(res->storage_bits, VREND_STORAGE_GBM_BUFFER) || res->gbm_bo))
+      return true;
+   return false;
+}
+
 static bool vrend_blit_needs_swizzle(enum virgl_formats src,
                                      enum virgl_formats dst)
 {
@@ -2188,6 +2206,14 @@ int vrend_create_sampler_view(struct vrend_context *ctx,
          swizzle[3] = tex_conv_table[view->format].swizzle[swizzle[3]];
    }
 
+   if (vrend_resource_is_emulated_bgra(view->texture)) {
+      uint8_t temp = swizzle[0];
+      swizzle[0] = swizzle[2];
+      swizzle[2] = temp;
+      VREND_DEBUG(dbg_bgra, ctx, "swizzling sampler channels on %s resource: (%d %d %d %d)\n",
+                  util_format_name(view->texture->base.format),
+                  swizzle[0], swizzle[1], swizzle[2], swizzle[3]);
+   }
    for (unsigned i = 0; i < 4; ++i)
       view->gl_swizzle[i] = to_gl_swizzle(swizzle[i]);
 
@@ -2503,6 +2529,18 @@ static void vrend_hw_emit_framebuffer_state(struct vrend_sub_context *sub_ctx)
          glDisable(GL_FRAMEBUFFER_SRGB_EXT);
       }
       sub_ctx->framebuffer_srgb_enabled = use_srgb;
+   }
+
+   sub_ctx->swizzle_output_rgb_to_bgr = 0;
+   for (int i = 0; i < sub_ctx->nr_cbufs; i++) {
+      if (sub_ctx->surf[i]) {
+         struct vrend_surface *surf = sub_ctx->surf[i];
+         if (vrend_resource_is_emulated_bgra(surf->texture)) {
+            VREND_DEBUG(dbg_bgra, sub_ctx->parent, "swizzling output for 0x%x (surface format is %s; resource format is %s)\n",
+                         i, util_format_name(surf->format), util_format_name(surf->texture->base.format));
+            sub_ctx->swizzle_output_rgb_to_bgr |= 1 << i;
+         }
+      }
    }
 
    glDrawBuffers(sub_ctx->nr_cbufs, buffers);
@@ -3769,6 +3807,9 @@ void vrend_clear(struct vrend_context *ctx,
    if (buffers & PIPE_CLEAR_COLOR) {
       if (sub_ctx->nr_cbufs && sub_ctx->surf[0] && vrend_format_is_emulated_alpha(sub_ctx->surf[0]->format)) {
          glClearColor(color->f[3], 0.0, 0.0, 0.0);
+      } else if (vrend_resource_is_emulated_bgra(sub_ctx->surf[0]->texture)) {
+         VREND_DEBUG(dbg_bgra, ctx, "swizzling glClearColor() since rendering surface is an externally-stored BGR* resource\n");
+         glClearColor(color->f[2], color->f[1], color->f[0], color->f[3]);
       } else {
          glClearColor(color->f[0], color->f[1], color->f[2], color->f[3]);
       }
@@ -7612,7 +7653,8 @@ static int vrend_renderer_transfer_write_iov(struct vrend_context *ctx,
 
          /* GLES doesn't allow format conversions, which we need for BGRA resources with RGBA
           * internal format. So we fallback to performing a CPU swizzle before uploading. */
-         if (vrend_state.use_gles && vrend_format_is_bgra(res->base.format)) {
+         if (vrend_state.use_gles && vrend_format_is_bgra(res->base.format) &&
+             !vrend_resource_is_emulated_bgra(res)) {
             VREND_DEBUG(dbg_bgra, ctx, "manually swizzling bgra->rgba on upload since gles+bgra\n");
             vrend_swizzle_data_bgra(send_size, data);
          }
@@ -7943,12 +7985,14 @@ static int vrend_transfer_send_readpixels(struct vrend_context *ctx,
    do_readpixels(res, 0, info->level, info->box->z, info->box->x, y1,
                  info->box->width, info->box->height, format, type, send_size, data);
 
-   /* on GLES, texture-backed BGR* resources are always stored with RGBA internal format, but
+   /* on GLES, texture-backed BGR* resources are always stored with RGB* internal format, but
     * the guest will expect to readback the data in BGRA format.
     * Since the GLES API doesn't allow format conversions like GL, we CPU-swizzle the data
     * on upload and need to do the same on readback.
-    */
-   if (vrend_state.use_gles && vrend_format_is_bgra(res->base.format)) {
+    * The notable exception is externally-stored (GBM/EGL) BGR* resources, for which BGR*
+    * byte-ordering is used instead to match external access patterns. */
+   if (vrend_state.use_gles && vrend_format_is_bgra(res->base.format) &&
+       !vrend_resource_is_emulated_bgra(res)) {
       VREND_DEBUG(dbg_bgra, ctx, "manually swizzling rgba->bgra on readback since gles+bgra\n");
       vrend_swizzle_data_bgra(send_size, data);
    }
@@ -8229,9 +8273,13 @@ int vrend_renderer_copy_transfer3d(struct vrend_context *ctx,
        * VREND_STORAGE_GL_IMMUTABLE is set because it implies that the
        * internal format is known and is known to be compatible with the
        * subsequence glTexSubImage2D.  Otherwise, we glFinish and use GBM.
+       * Also, EGL images with BGRX format are not compatible with
+       * glTexSubImage2D, since they are stored with only 3bpp, so gbm
+       * transfer is required.
        */
       if (info->synchronized) {
-         if (has_bit(dst_res->storage_bits, VREND_STORAGE_GL_IMMUTABLE))
+         if (has_bit(dst_res->storage_bits, VREND_STORAGE_GL_IMMUTABLE) &&
+             dst_res->base.format != VIRGL_FORMAT_B8G8R8X8_UNORM)
             use_gbm = false;
          else
             glFinish();
@@ -8533,8 +8581,10 @@ static void vrend_resource_copy_fallback(struct vrend_resource *src_res,
       /* if this is a BGR* resource on GLES, the data needs to be manually swizzled to RGB* before
        * storing in a texture. Iovec data is assumed to have the original byte-order, namely BGR*,
        * and needs to be reordered when storing in the host's texture memory as RGB*.
+       * On the contrary, externally-stored BGR* resources are assumed to remain in BGR* format at
+       * all times.
        */
-      if (vrend_format_is_bgra(dst_res->base.format))
+      if (vrend_format_is_bgra(dst_res->base.format) && !vrend_resource_is_emulated_bgra(dst_res))
          vrend_swizzle_data_bgra(total_size, tptr);
    } else {
       uint32_t read_chunk_size;

@@ -862,7 +862,7 @@ boolean format_is_copy_compatible(enum virgl_formats src, enum virgl_formats dst
       /* When Mesa imports dma_buf VIRGL_FORMAT_B8G8R8X8_UNORM/DRM|GBM_FORMAT_XRGB8888
        * it uses internal format GL_RGB8.
        * But when virglrenderer creates VIRGL_FORMAT_B8G8R8X8_UNORM texture, it
-       * uses internal format GL_BGRA_EXT.
+       * uses internal format GL_RGBA8.
        * So the formats do not match when Mesa checks them internally.
        */
       if (flags & VREND_COPY_COMPAT_FLAG_ONE_IS_EGL_IMAGE &&
