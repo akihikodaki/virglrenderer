@@ -1885,7 +1885,8 @@ int vrend_create_surface(struct vrend_context *ctx,
    surf->nr_samples = nr_samples;
 
    if (!has_bit(res->storage_bits, VREND_STORAGE_GL_BUFFER) &&
-         has_bit(res->storage_bits, VREND_STORAGE_GL_IMMUTABLE)) {
+         has_bit(res->storage_bits, VREND_STORAGE_GL_IMMUTABLE) &&
+         has_feature(feat_texture_view)) {
       /* We don't need texture views for buffer objects.
        * Otherwise we only need a texture view if the
        * a) formats differ between the surface and base texture
@@ -2248,7 +2249,9 @@ int vrend_create_sampler_view(struct vrend_context *ctx,
       else if (view->format != view->texture->base.format)
          needs_view = true;
 
-      if (needs_view && has_bit(view->texture->storage_bits, VREND_STORAGE_GL_IMMUTABLE)) {
+      if (needs_view &&
+          has_bit(view->texture->storage_bits, VREND_STORAGE_GL_IMMUTABLE) &&
+          has_feature(feat_texture_view)) {
         glGenTextures(1, &view->id);
         GLenum internalformat = tex_conv_table[format].internalformat;
         unsigned base_layer = view->val0 & 0xffff;
