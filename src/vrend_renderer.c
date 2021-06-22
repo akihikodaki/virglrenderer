@@ -826,11 +826,13 @@ static inline bool vrend_format_can_scanout(enum virgl_formats format)
 #endif
 }
 
+#ifdef ENABLE_MINIGBM_ALLOCATION
 static inline bool vrend_format_can_texture_view(enum virgl_formats format)
 {
    return has_feature(feat_texture_view) &&
       tex_conv_table[format].flags & VIRGL_TEXTURE_CAN_TEXTURE_STORAGE;
 }
+#endif
 
 struct vrend_context_tweaks *vrend_get_context_tweaks(struct vrend_context *ctx)
 {
