@@ -81,6 +81,7 @@ int create_eventfd(unsigned int initval)
 #ifdef HAVE_EVENTFD_H
    return eventfd(initval, EFD_CLOEXEC | EFD_NONBLOCK);
 #else
+   (void)initval;
    return -1;
 #endif
 }
