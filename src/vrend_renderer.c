@@ -4910,6 +4910,10 @@ int vrend_clear_texture(struct vrend_context* ctx,
    format = tex_conv_table[fmt].glformat;
    type = tex_conv_table[fmt].gltype;
 
+   if (!has_feature(feat_clear_texture)) {
+      return EINVAL;
+   }
+
    /* 32-bit BGRA resources are always reordered to RGBA ordering before
     * submission to the host driver. Reorder red/blue color bytes in
     * the clear color to match. */
