@@ -2519,7 +2519,13 @@ static GLuint convert_wrap(struct vrend_context *ctx, int wrap)
    case PIPE_TEX_WRAP_CLAMP: if (vrend_state.use_core_profile == false) return GL_CLAMP; else return GL_CLAMP_TO_EDGE;
 
    case PIPE_TEX_WRAP_CLAMP_TO_EDGE: return GL_CLAMP_TO_EDGE;
-   case PIPE_TEX_WRAP_CLAMP_TO_BORDER: return GL_CLAMP_TO_BORDER;
+   case PIPE_TEX_WRAP_CLAMP_TO_BORDER:
+      if (has_feature(feat_sampler_border_colors))
+         return GL_CLAMP_TO_BORDER;
+      else {
+         virgl_warn("Sampler border color setting requested but not supported\n");
+         return GL_CLAMP_TO_EDGE;
+      }
 
    case PIPE_TEX_WRAP_MIRROR_REPEAT: return GL_MIRRORED_REPEAT;
    case PIPE_TEX_WRAP_MIRROR_CLAMP:
