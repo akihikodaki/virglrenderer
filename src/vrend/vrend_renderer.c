@@ -3455,7 +3455,8 @@ void vrend_bind_vertex_elements_state(struct vrend_context *ctx,
       return;
    }
 
-   if (has_feature(feat_gles31_vertex_attrib_binding) && v->id == 0) {
+   if (has_feature(feat_gles31_vertex_attrib_binding)) {
+      if (v->id == 0) {
       glGenVertexArrays(1, &v->id);
       glBindVertexArray(v->id);
       for (uint32_t i = 0; i < v->count; i++) {
@@ -3473,6 +3474,17 @@ void vrend_bind_vertex_elements_state(struct vrend_context *ctx,
          glVertexAttribBinding(i, ve->base.vertex_buffer_index);
          glVertexBindingDivisor(i, ve->base.instance_divisor);
          glEnableVertexAttribArray(i);
+         }
+      }
+   } else {
+      for (uint32_t i = 0; i < v->count; i++) {
+         struct vrend_vertex_element *ve = &v->elements[i];
+
+         if (util_format_is_pure_integer(ve->base.src_format)) {
+            UPDATE_INT_SIGN_MASK(ve->base.src_format, i,
+                                 v->signed_int_bitmask,
+                                 v->unsigned_int_bitmask);
+         }
       }
    }
 }
@@ -7556,11 +7568,7 @@ static bool use_integer(void) {
       return true;
 
    const char * a = (const char *) glGetString(GL_VENDOR);
-   if (!a)
-       return false;
-   if (strcmp(a, "ARM") == 0)
-      return true;
-   return false;
+   return a && !(strcmp(a, "ARM") && strcmp(a, "Google Inc. (Apple)"));
 }
 
 static bool vrend_use_gbm_layout_feature(UNUSED uint32_t flags)
