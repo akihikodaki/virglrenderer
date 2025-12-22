@@ -35,6 +35,12 @@
    "%s"                                         \
 
 #define FS_HEADER_GLES                             \
+   "#version 300 es\n"                          \
+   "// Blitter\n"                               \
+   "%s"                                         \
+   "precision mediump float;\n"                 \
+
+#define FS_HEADER_GLES_MS                       \
    "#version 310 es\n"                          \
    "// Blitter\n"                               \
    "%s"                                         \
@@ -52,6 +58,11 @@
    "// Blitter\n"                               \
 
 #define HEADER_GLES                             \
+   "#version 300 es\n"                          \
+   "// Blitter\n"                               \
+   "precision mediump float;\n"                 \
+
+#define HEADER_GLES_MS                          \
    "#version 310 es\n"                          \
    "// Blitter\n"                               \
    "precision mediump float;\n"                 \
@@ -145,7 +156,7 @@
    "}\n"
 
 #define FS_TEXFETCH_COL_MSAA_GL FS_HEADER_GL FS_TEXFETCH_COL_MSAA_BODY
-#define FS_TEXFETCH_COL_MSAA_GLES FS_HEADER_GLES FS_TEXFETCH_COL_MSAA_BODY
+#define FS_TEXFETCH_COL_MSAA_GLES FS_HEADER_GLES_MS FS_TEXFETCH_COL_MSAA_BODY
 #define FS_TEXFETCH_COL_MSAA_ARRAY_GLES FS_HEADER_GLES_MS_ARRAY FS_TEXFETCH_COL_MSAA_BODY
 
 #define FS_TEXFETCH_DS_BODY                             \
@@ -178,7 +189,7 @@ struct vrend_context;
 struct vrend_resource;
 struct vrend_blit_info;
 #define FS_TEXFETCH_DS_MSAA_GL HEADER_GL FS_TEXFETCH_DS_MSAA_BODY
-#define FS_TEXFETCH_DS_MSAA_GLES HEADER_GLES FS_TEXFETCH_DS_MSAA_BODY_GLES
+#define FS_TEXFETCH_DS_MSAA_GLES HEADER_GLES_MS FS_TEXFETCH_DS_MSAA_BODY_GLES
 #define FS_TEXFETCH_DS_MSAA_ARRAY_GLES HEADER_GLES_MS_ARRAY FS_TEXFETCH_DS_MSAA_BODY_GLES
 
 /* implement blitting using OpenGL. */
