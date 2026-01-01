@@ -356,12 +356,12 @@ struct virgl_egl *virgl_egl_init(EGLNativeDisplayType display_id, bool surfacele
          goto fail;
       if (surfaceless) {
          egl->egl_display = egl->funcs.eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA,
-                                                             EGL_DEFAULT_DISPLAY, NULL);
+                                                             (void *)EGL_DEFAULT_DISPLAY, NULL);
       }
 #ifdef ENABLE_GBM
       else
          egl->egl_display = egl->funcs.eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR,
-                                                             (EGLNativeDisplayType*)egl->gbm->device, NULL);
+                                                             egl->gbm->device, NULL);
 #endif
    } else {
 #ifdef ENABLE_GBM
